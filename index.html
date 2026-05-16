@@ -34,9 +34,7 @@
             0%, 100% { box-shadow: 0 0 20px rgba(129, 140, 248, 0.15), inset 0 0 15px rgba(129, 140, 248, 0.05); border-color: rgba(139, 92, 246, 0.2); }
             50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.4), inset 0 0 25px rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.5); }
         }
-        .epic-terminal {
-            animation: arena-pulse 4s infinite ease-in-out;
-        }
+        .epic-terminal { animation: arena-pulse 4s infinite ease-in-out; }
 
         @keyframes title-shimmer {
             0%, 100% { text-shadow: 0 0 12px rgba(165, 180, 252, 0.2); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
@@ -101,7 +99,7 @@
         </div>
 
         <button onclick="init()" class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] transition-all p-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl shadow-indigo-600/30 border border-indigo-400/20">
-            Enter the arena
+            Enter the Arena
         </button>
         
         <div class="mt-8 text-[8px] font-mono opacity-30 tracking-widest uppercase">
@@ -173,7 +171,6 @@
     </div>
 
 <script>
-// --- OFFICIAL 2026 RUNNING ORDER ---
 const songs = [
     {n:"01", c:"Denmark", code:"dk", a:"Søren Torpegaard Lund - Før Vi Går Hjem"},
     {n:"02", c:"Germany", code:"de", a:"Sarah Engels - Fire"},
@@ -202,7 +199,7 @@ const songs = [
     {n:"25", c:"Austria", code:"at", a:"COSMÓ - Tanzschein"}
 ];
 
-let idx = 0, myName = "", client = null, roomData = {}; 
+let idx = 0, myName = "", client = null, roomData = {}, chatLog = []; 
 const ROOM = "ESC2026_FINAL_" + (window.location.hash.substring(1) || "MAIN");
 const ADMIN_NAME = "SIMONE";
 let pendingDelete = null;
@@ -253,12 +250,27 @@ function getMemberColor(name) {
 function init() {
     myName = document.getElementById('uName').value.trim();
     if(!myName) return alert("Enter Name");
+    
+    // Recovery Step 1: Pre-populate any archived chat timeline cached locally
+    const savedChats = localStorage.getItem(ROOM + '_chats_v2');
+    if(savedChats) {
+        chatLog = JSON.parse(savedChats);
+        chatLog.forEach(m => addChatMessage(m.user, m.text, false));
+    }
+
     client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
     client.on('connect', () => {
         document.getElementById('dot').className = "h-2 w-2 rounded-full bg-green-400";
         document.getElementById('stat').innerText = "LIVE";
         client.subscribe(`esc2026/${ROOM}/sync`);
+        
+        // Broadcast standard sync request (now requests room state + missing timelines)
         send({ type: "SYNC_REQUEST", from: myName });
+        
+        // Recovery Step 2: Extract last known viewing coordinate per username
+        const savedIdx = localStorage.getItem(ROOM + '_last_idx_' + myName);
+        idx = savedIdx !== null ? parseInt(savedIdx) : 0;
+
         document.getElementById('setup').classList.add('hidden');
         document.getElementById('main-header').classList.remove('hidden');
         document.getElementById('app').classList.remove('hidden');
@@ -267,15 +279,24 @@ function init() {
     client.on('message', (topic, msg) => {
         const d = JSON.parse(msg.toString());
         if (d.type === "SCORE_UPDATE") { updateData(d.country, d.user, d.score); }
-        else if (d.type === "CHAT") { addChatMessage(d.user, d.text); }
+        else if (d.type === "CHAT") { handleIncomingChat(d.user, d.text); }
         else if (d.type === "ADMIN_DELETE") { 
             if(roomData[d.country]) delete roomData[d.country][d.user];
             if(d.country === songs[idx].c) refreshUI();
             if(!document.getElementById('rankings').classList.contains('hidden')) updateRankingsUI();
         }
-        else if (d.type === "SYNC_REQUEST" && d.from !== myName) { send({ type: "SYNC_RESPONSE", data: roomData, to: d.from }); }
+        else if (d.type === "SYNC_REQUEST" && d.from !== myName) { 
+            send({ type: "SYNC_RESPONSE", data: roomData, chats: chatLog, to: d.from }); 
+        }
         else if (d.type === "SYNC_RESPONSE" && d.to === myName) {
             Object.keys(d.data).forEach(c => { Object.keys(d.data[c]).forEach(u => updateData(c, u, d.data[c][u])); });
+            if (d.chats) {
+                d.chats.forEach(m => {
+                    if (!chatLog.some(existing => existing.user === m.user && existing.text === m.text)) {
+                        addChatMessage(m.user, m.text, true);
+                    }
+                });
+            }
         }
     });
 }
@@ -294,6 +315,10 @@ function render() {
     document.getElementById('artist').innerText = s.a;
     document.getElementById('song-num').innerText = `${s.n}/25`;
     document.getElementById('flag').src = `https://flagcdn.com/w160/${s.code}.png`;
+    
+    // Save current viewing layer position dynamically
+    localStorage.setItem(ROOM + '_last_idx_' + myName, idx);
+
     const currentScore = (roomData[s.c] && roomData[s.c][myName]) ? roomData[s.c][myName] : 1;
     document.getElementById('rng').value = currentScore;
     document.getElementById('cur-val').innerText = currentScore;
@@ -331,7 +356,11 @@ document.getElementById('rng').oninput = function() {
 
 function nav(dir) {
     let next = idx + dir;
-    if(next >= 0 && next < songs.length) { idx = next; render(); }
+    if(next >= 0 && next < songs.length) { 
+        idx = next; 
+        localStorage.setItem(ROOM + '_last_idx_' + myName, idx);
+        render(); 
+    }
 }
 
 function sendChat() {
@@ -342,7 +371,14 @@ function sendChat() {
     input.value = '';
 }
 
-function addChatMessage(user, text) {
+function handleIncomingChat(user, text) {
+    // Add to engine timeline array if unique to prevent duplications during multi-device synchronization
+    if (!chatLog.some(m => m.user === user && m.text === text)) {
+        addChatMessage(user, text, true);
+    }
+}
+
+function addChatMessage(user, text, saveToLog = true) {
     const container = document.getElementById('chat-messages');
     const div = document.createElement('div');
     const isMe = user === myName;
@@ -351,7 +387,14 @@ function addChatMessage(user, text) {
     div.innerHTML = `<span style="color: ${userColor}; font-size: 10px; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; padding: 0 4px;">${user}</span><div class="${isMe ? 'bg-indigo-600' : 'bg-white/10'} p-2.5 rounded-2xl max-w-[90%] shadow-lg"><p style="font-size: 14.5px; line-height: 1.4; font-weight: 400; color: white;">${text}</p></div>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
-    if(document.getElementById('chat-ui').classList.contains('hidden')) {
+
+    if (saveToLog) {
+        chatLog.push({ user, text });
+        if(chatLog.length > 50) chatLog.shift(); // Keep rolling memory pipeline lean
+        localStorage.setItem(ROOM + '_chats_v2', JSON.stringify(chatLog));
+    }
+
+    if(document.getElementById('chat-ui').classList.contains('hidden') && saveToLog) {
         document.getElementById('chat-notif').classList.remove('hidden');
         document.getElementById('chat-btn').classList.add('chat-btn-alert');
     }
