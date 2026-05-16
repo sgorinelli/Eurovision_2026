@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ESC 2026 - VIENNA LIVE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        
+        body { 
+            background: #0f0c29; 
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0c29 100%);
+            background-attachment: fixed;
+            color: white; font-family: 'Inter', sans-serif; min-height: 100vh; touch-action: manipulation;
+        }
+
+        .glass { 
+            background: rgba(255, 255, 255, 0.05); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+            border-radius: 20px; 
+        }
+
+        .accent { color: #a5b4fc; }
+        input[type="range"] { accent-color: #818cf8; }
+
+        .details-expand { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+        .details-expand.open { max-height: 1000px; padding-bottom: 10px; }
+        
+        /* NEON ALERT BORDER */
+        @keyframes border-pulse {
+            0% { border-color: rgba(236, 72, 153, 0.4); box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.4); }
+            50% { border-color: rgba(236, 72, 153, 1); box-shadow: 0 0 12px 2px rgba(236, 72, 153, 0.6); }
+            100% { border-color: rgba(236, 72, 153, 0.4); box-shadow: 0 0 0 0 rgba(236, 72, 153, 0); }
+        }
+        .chat-btn-alert {
+            animation: border-pulse 1.5s infinite !important;
+            border-width: 2px !important;
+            background: rgba(236, 72, 153, 0.1) !important;
+        }
+
+        /* CHAT BUBBLES */
+        .chat-bubble { animation: pop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-bottom: 10px; }
+        @keyframes pop { from { transform: translateY(5px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* CRYSTAL CLEAR MODALS */
+        .modal-bg { 
+            background: rgba(15, 12, 41, 0.75);
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+        }
+        
+        .admin-warning { border: 2px solid rgba(239, 68, 68, 0.5); background: rgba(20, 10, 10, 0.95); }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center">
+
+    <!-- HEADER -->
+    <div class="w-full max-w-md flex justify-between items-center mb-4 z-10">
+        <div class="flex items-center gap-2">
+            <div id="dot" class="h-2 w-2 rounded-full bg-red-600 shadow-[0_0_8px_red]"></div>
+            <span id="stat" class="text-[9px] font-black uppercase tracking-widest opacity-40">Connecting</span>
+        </div>
+        <div class="flex gap-2">
+            <button id="chat-btn" onclick="openModal('chat-ui')" class="relative text-[11px] font-black bg-white/5 border border-white/10 px-4 py-2.5 rounded-full uppercase tracking-widest transition-all">
+                💬 Chat <span id="chat-notif" class="hidden absolute -top-1 -right-1 h-2.5 w-2.5 bg-pink-500 border-2 border-[#0f0c29] rounded-full"></span>
+            </button>
+            <button onclick="openModal('rankings')" class="text-[11px] font-black bg-white/5 border border-white/10 px-4 py-2.5 rounded-full uppercase tracking-widest transition-all">🏆 Standings</button>
+        </div>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="setup" class="w-full max-w-md glass p-8 text-center mt-10">
+        <h1 class="text-3xl font-black italic mb-1 uppercase tracking-tighter">Vienna <span class="accent">2026</span></h1>
+        <p class="text-[10px] opacity-40 mb-6 tracking-[0.3em]">GRAND FINAL JURY</p>
+        <input id="uName" type="text" placeholder="Your Name" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl mb-4 text-center text-lg focus:border-indigo-400 outline-none">
+        <button onclick="init()" class="w-full bg-indigo-600 p-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-lg shadow-indigo-600/20">Join Session</button>
+    </div>
+
+    <!-- APP UI -->
+    <div id="app" class="hidden w-full max-w-md space-y-4">
+        <div class="glass p-5 text-center relative overflow-hidden">
+            <div id="avg" class="absolute top-3 right-3 bg-indigo-500/20 text-indigo-200 text-[9px] px-2 py-0.5 rounded-full font-black border border-indigo-500/30">AVG: --</div>
+            <div id="song-num" class="absolute top-3 left-3 opacity-30 text-[10px] font-black italic">--</div>
+            
+            <img id="flag" src="" class="h-6 mx-auto mb-3 rounded-sm shadow-lg">
+            <h2 id="country" class="text-xl font-black mb-0.5 uppercase italic tracking-tighter">Country</h2>
+            <p id="artist" class="text-[9px] opacity-50 uppercase tracking-widest font-bold mb-4 px-4 leading-tight">Artist</p>
+            
+            <div class="bg-black/30 p-4 rounded-2xl border border-white/5 mb-4 shadow-inner">
+                <div id="cur-val" class="text-5xl font-black italic accent leading-none mb-3">1</div>
+                <input type="range" id="rng" min="1" max="10" step="1" value="1" class="w-full h-1.5">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="nav(-1)" class="bg-white/5 p-3 rounded-lg font-black text-[10px] uppercase border border-white/5">Back</button>
+                <button onclick="nav(1)" class="bg-indigo-600 p-3 rounded-lg font-black text-[10px] uppercase">Next</button>
+            </div>
+        </div>
+
+        <div class="glass p-4">
+            <h3 class="text-[9px] font-black opacity-30 uppercase mb-3 tracking-widest">Consensus</h3>
+            <div id="jury-list" class="space-y-1.5"></div>
+        </div>
+    </div>
+
+    <!-- CHAT MODAL -->
+    <div id="chat-ui" class="hidden fixed inset-0 z-[60] modal-bg p-4 flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-2xl font-black italic uppercase tracking-tighter">Jury <span class="accent">Chat</span></h2>
+            <button onclick="closeCurrentModal()" class="h-12 w-12 flex items-center justify-center rounded-full bg-white/10 text-3xl font-light">×</button>
+        </div>
+        <div id="chat-messages" class="flex-1 overflow-y-auto space-y-4 mb-4 p-2 pb-10"></div>
+        <div class="flex gap-2 p-2 glass items-center mb-2">
+            <input id="chat-input" type="text" placeholder="Type a message..." class="flex-1 bg-transparent border-none outline-none text-base p-2">
+            <button onclick="sendChat()" class="bg-indigo-600 h-10 px-5 rounded-xl font-black text-[10px] uppercase">Send</button>
+        </div>
+    </div>
+
+    <!-- RANKINGS MODAL -->
+    <div id="rankings" class="hidden fixed inset-0 z-[60] modal-bg p-6 overflow-y-auto">
+        <div class="max-w-md mx-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-black italic uppercase tracking-tighter">Jury <span class="accent">Standings</span></h2>
+                <button onclick="closeCurrentModal()" class="h-10 w-10 flex items-center justify-center rounded-full bg-white/10 text-2xl font-light">×</button>
+            </div>
+            <div id="rankings-list" class="space-y-2 pb-20"></div>
+        </div>
+    </div>
+
+    <!-- DELETE CONFIRMATION -->
+    <div id="admin-confirm" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+        <div class="w-full max-w-xs admin-warning p-8 rounded-3xl text-center shadow-2xl">
+            <div class="text-4xl mb-4">⚠️</div>
+            <h2 class="text-xl font-black uppercase mb-2">Confirm Delete?</h2>
+            <p id="delete-desc" class="text-xs opacity-70 mb-8 leading-relaxed">This wipe is global.</p>
+            <div class="flex flex-col gap-3">
+                <button id="final-delete-btn" class="w-full bg-red-600 p-4 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-red-600/20">Delete</button>
+                <button onclick="hideDeleteConfirm()" class="w-full bg-white/10 p-4 rounded-xl font-black uppercase text-[10px] tracking-widest">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// --- OFFICIAL 2026 RUNNING ORDER ---
+const songs = [
+    {n:"01", c:"Denmark", code:"dk", a:"Søren Torpegaard Lund - Før Vi Går Hjem"},
+    {n:"02", c:"Germany", code:"de", a:"Sarah Engels - Fire"},
+    {n:"03", c:"Israel", code:"il", a:"Noam Bettan - Michelle"},
+    {n:"04", c:"Belgium", code:"be", a:"ESSYLA - Dancing on the Ice"},
+    {n:"05", c:"Albania", code:"al", a:"Alis - Nân"},
+    {n:"06", c:"Greece", code:"gr", a:"Akylas - Ferto"},
+    {n:"07", c:"Ukraine", code:"ua", a:"LELÉKA - Ridnym"},
+    {n:"08", c:"Australia", code:"au", a:"Delta Goodrem - Eclipse"},
+    {n:"09", c:"Serbia", code:"rs", a:"LAVINA - Kraj Mene"},
+    {n:"10", c:"Malta", code:"mt", a:"AIDAN - Bella"},
+    {n:"11", c:"Czechia", code:"cz", a:"Daniel Zizka - CROSSROADS"},
+    {n:"12", c:"Bulgaria", code:"bg", a:"DARA - Bangaranga"},
+    {n:"13", c:"Croatia", code:"hr", a:"LELEK - Andromeda"},
+    {n:"14", c:"United Kingdom", code:"gb", a:"LOOK MUM NO COMPUTER - Eins, Zwei, Drei"},
+    {n:"15", c:"France", code:"fr", a:"Monroe - Regarde !"},
+    {n:"16", c:"Moldova", code:"md", a:"Satoshi - Viva, Moldova!"},
+    {n:"17", c:"Finland", code:"fi", a:"Linda Lampenius x Pete Parkkonen - Liekinheitin"},
+    {n:"18", c:"Poland", code:"pl", a:"ALICJA - Pray"},
+    {n:"19", c:"Lithuania", code:"lt", a:"Lion Ceccah - Sólo Quiero Más"},
+    {n:"20", c:"Sweden", code:"se", a:"FELICIA - My System"},
+    {n:"21", c:"Cyprus", code:"cy", a:"Antigoni - JALLA"},
+    {n:"22", c:"Italy", code:"it", a:"Sal Da Vinci - Per Sempre Sì"},
+    {n:"23", c:"Norway", code:"no", a:"JONAS LOVV - YA YA YA"},
+    {n:"24", c:"Romania", code:"ro", a:"Alexandra Căpitănescu - Choke Me"},
+    {n:"25", c:"Austria", code:"at", a:"COSMÓ - Tanzschein"}
+];
+
+let idx = 0, myName = "", client = null, roomData = {}; 
+const ROOM = "ESC2026_FINAL_" + (window.location.hash.substring(1) || "MAIN");
+const ADMIN_NAME = "SIMONE";
+let pendingDelete = null;
+
+window.addEventListener('popstate', function(event) {
+    document.getElementById('chat-ui').classList.add('hidden');
+    document.getElementById('rankings').classList.add('hidden');
+    hideDeleteConfirm();
+});
+
+function openModal(id) {
+    document.getElementById(id).classList.remove('hidden');
+    if (id === 'rankings') updateRankingsUI();
+    if (id === 'chat-ui') {
+        document.getElementById('chat-notif').classList.add('hidden');
+        document.getElementById('chat-btn').classList.remove('chat-btn-alert');
+    }
+    history.pushState({ modalOpen: true }, "");
+}
+
+function closeCurrentModal() { history.back(); }
+
+function showDeleteConfirm(country, user) {
+    pendingDelete = { country, user };
+    document.getElementById('delete-desc').innerText = `Delete ${user}'s score?`;
+    document.getElementById('admin-confirm').classList.remove('hidden');
+    document.getElementById('final-delete-btn').onclick = executeDelete;
+}
+
+function hideDeleteConfirm() { document.getElementById('admin-confirm').classList.add('hidden'); }
+
+function executeDelete() {
+    if(!pendingDelete) return;
+    const { country, user } = pendingDelete;
+    if(roomData[country]) delete roomData[country][user];
+    send({ type: "ADMIN_DELETE", country: country, user: user });
+    if(country === songs[idx].c) refreshUI();
+    if(!document.getElementById('rankings').classList.contains('hidden')) updateRankingsUI();
+    hideDeleteConfirm();
+}
+
+function getMemberColor(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return `hsl(${Math.abs(hash) % 360}, 85%, 75%)`;
+}
+
+function init() {
+    myName = document.getElementById('uName').value.trim();
+    if(!myName) return alert("Enter Name");
+    client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+    client.on('connect', () => {
+        document.getElementById('dot').className = "h-2 w-2 rounded-full bg-green-400";
+        document.getElementById('stat').innerText = "LIVE";
+        client.subscribe(`esc2026/${ROOM}/sync`);
+        send({ type: "SYNC_REQUEST", from: myName });
+        document.getElementById('setup').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        render();
+    });
+    client.on('message', (topic, msg) => {
+        const d = JSON.parse(msg.toString());
+        if (d.type === "SCORE_UPDATE") { updateData(d.country, d.user, d.score); }
+        else if (d.type === "CHAT") { addChatMessage(d.user, d.text); }
+        else if (d.type === "ADMIN_DELETE") { 
+            if(roomData[d.country]) delete roomData[d.country][d.user];
+            if(d.country === songs[idx].c) refreshUI();
+            if(!document.getElementById('rankings').classList.contains('hidden')) updateRankingsUI();
+        }
+        else if (d.type === "SYNC_REQUEST" && d.from !== myName) { send({ type: "SYNC_RESPONSE", data: roomData, to: d.from }); }
+        else if (d.type === "SYNC_RESPONSE" && d.to === myName) {
+            Object.keys(d.data).forEach(c => { Object.keys(d.data[c]).forEach(u => updateData(c, u, d.data[c][u])); });
+        }
+    });
+}
+
+function send(obj) { if(client) client.publish(`esc2026/${ROOM}/sync`, JSON.stringify(obj)); }
+
+function updateData(c, u, s) {
+    if(!roomData[c]) roomData[c] = {};
+    roomData[c][u] = parseInt(s);
+    if(c === songs[idx].c) refreshUI();
+}
+
+function render() {
+    const s = songs[idx];
+    document.getElementById('country').innerText = s.c;
+    document.getElementById('artist').innerText = s.a;
+    document.getElementById('song-num').innerText = `${s.n}/25`;
+    document.getElementById('flag').src = `https://flagcdn.com/w160/${s.code}.png`;
+    const currentScore = (roomData[s.c] && roomData[s.c][myName]) ? roomData[s.c][myName] : 1;
+    document.getElementById('rng').value = currentScore;
+    document.getElementById('cur-val').innerText = currentScore;
+
+    if (!roomData[s.c] || !roomData[s.c][myName]) {
+        updateData(s.c, myName, 1);
+        send({ type: "SCORE_UPDATE", user: myName, country: s.c, score: 1 });
+    }
+    refreshUI();
+}
+
+function refreshUI() {
+    const list = document.getElementById('jury-list');
+    const votes = roomData[songs[idx].c] || {};
+    list.innerHTML = '';
+    let sum = 0, n = 0;
+    Object.entries(votes).forEach(([user, score]) => {
+        const row = document.createElement('div');
+        row.className = "flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5";
+        let adminBtn = (myName === ADMIN_NAME && user !== myName) 
+            ? `<button onclick="showDeleteConfirm('${songs[idx].c}', '${user}')" class="ml-2 text-red-500 opacity-50 hover:opacity-100 text-[10px]">❌</button>` : '';
+        row.innerHTML = `<div class="flex items-center"><span class="text-[9px] font-black uppercase tracking-widest ${user === myName ? 'accent' : 'opacity-40'}">${user}</span>${adminBtn}</div><span class="font-black accent italic">${score}</span>`;
+        list.appendChild(row);
+        sum += score; n++;
+    });
+    document.getElementById('avg').innerText = n > 0 ? "AVG: " + (sum/n).toFixed(1) : "AVG: --";
+}
+
+document.getElementById('rng').oninput = function() {
+    const val = this.value;
+    document.getElementById('cur-val').innerText = val;
+    updateData(songs[idx].c, myName, val);
+    send({ type: "SCORE_UPDATE", user: myName, country: songs[idx].c, score: val });
+};
+
+function nav(dir) {
+    let next = idx + dir;
+    if(next >= 0 && next < songs.length) { idx = next; render(); }
+}
+
+function sendChat() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if(!text) return;
+    send({ type: "CHAT", user: myName, text: text });
+    input.value = '';
+}
+
+function addChatMessage(user, text) {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    const isMe = user === myName;
+    const userColor = getMemberColor(user);
+    
+    div.className = `chat-bubble flex flex-col ${isMe ? 'items-end' : 'items-start'}`;
+    div.innerHTML = `
+        <span style="color: ${userColor}; font-size: 10px; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; padding: 0 4px;">${user}</span>
+        <div class="${isMe ? 'bg-indigo-600' : 'bg-white/10'} p-2.5 rounded-2xl max-w-[90%] shadow-lg">
+            <p style="font-size: 14px; line-height: 1.4; font-weight: 400; color: white;">${text}</p>
+        </div>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    if(document.getElementById('chat-ui').classList.contains('hidden')) {
+        document.getElementById('chat-notif').classList.remove('hidden');
+        document.getElementById('chat-btn').classList.add('chat-btn-alert');
+    }
+}
+
+document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') sendChat(); });
+
+function updateRankingsUI() {
+    const container = document.getElementById('rankings-list');
+    container.innerHTML = '';
+    const results = songs.map(s => {
+        const votes = roomData[s.c] || {};
+        const vals = Object.values(votes);
+        const avg = vals.length > 0 ? (vals.reduce((a,b) => a+b, 0) / vals.length) : 0;
+        return { name: s.c, avg: avg, code: s.code, votes: votes };
+    }).filter(r => r.avg > 0).sort((a,b) => b.avg - a.avg);
+
+    results.forEach((r, i) => {
+        const row = document.createElement('div');
+        row.className = "p-3 glass mb-1.5 cursor-pointer";
+        row.onclick = (e) => { if(e.target.tagName === 'BUTTON') return; row.querySelector('.details-expand').classList.toggle('open'); };
+        let scores = Object.entries(r.votes).map(([u, s]) => {
+            let adminBtn = (myName === ADMIN_NAME && u !== myName) 
+                ? `<button onclick="showDeleteConfirm('${r.name}', '${u}')" class="text-red-500 opacity-50 ml-2">❌</button>` : '';
+            return `<div class="flex justify-between text-[11px] opacity-60 px-3 py-1 items-center"><span>${u}${adminBtn}</span><span>${s}</span></div>`;
+        }).join('');
+        row.innerHTML = `<div class="flex justify-between items-center"><div class="flex items-center gap-2"><span class="text-xs font-black opacity-20">#${i+1}</span><img src="https://flagcdn.com/w40/${r.code}.png" class="h-2.5 rounded-sm"><span class="font-black text-[11px] uppercase italic">${r.name}</span></div><span class="text-lg font-black accent italic">${r.avg.toFixed(1)}</span></div><div class="details-expand bg-black/20 rounded-lg mt-2">${scores}</div>`;
+        container.appendChild(row);
+    });
+}
+</script>
+</body>
+</html>
