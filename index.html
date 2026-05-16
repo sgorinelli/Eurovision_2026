@@ -29,6 +29,21 @@
         .details-expand { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
         .details-expand.open { max-height: 1000px; padding-bottom: 10px; }
         
+        /* EPIC HOMEPAGE GLOWS */
+        @keyframes arena-pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(129, 140, 248, 0.15), inset 0 0 15px rgba(129, 140, 248, 0.05); border-color: rgba(139, 92, 246, 0.2); }
+            50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.4), inset 0 0 25px rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.5); }
+        }
+        .epic-terminal {
+            animation: arena-pulse 4s infinite ease-in-out;
+        }
+
+        @keyframes title-shimmer {
+            0%, 100% { text-shadow: 0 0 12px rgba(165, 180, 252, 0.2); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+            50% { text-shadow: 0 0 24px rgba(165, 180, 252, 0.8), 0 0 40px rgba(99, 102, 241, 0.4); filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.3)); }
+        }
+        .epic-title { animation: title-shimmer 3s infinite ease-in-out; }
+
         /* NEON ALERT BORDER */
         @keyframes border-pulse {
             0% { border-color: rgba(236, 72, 153, 0.4); box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.4); }
@@ -57,8 +72,7 @@
 </head>
 <body class="p-4 flex flex-col items-center">
 
-    <!-- HEADER -->
-    <div class="w-full max-w-md flex justify-between items-center mb-4 z-10">
+    <div id="main-header" class="hidden w-full max-w-md flex justify-between items-center mb-4 z-10">
         <div class="flex items-center gap-2">
             <div id="dot" class="h-2 w-2 rounded-full bg-red-600 shadow-[0_0_8px_red]"></div>
             <span id="stat" class="text-[9px] font-black uppercase tracking-widest opacity-40">Connecting</span>
@@ -71,15 +85,30 @@
         </div>
     </div>
 
-    <!-- LOGIN -->
-    <div id="setup" class="w-full max-w-md glass p-8 text-center mt-10">
-        <h1 class="text-3xl font-black italic mb-1 uppercase tracking-tighter">Vienna <span class="accent">2026</span></h1>
-        <p class="text-[10px] opacity-40 mb-6 tracking-[0.3em]">GRAND FINAL JURY</p>
-        <input id="uName" type="text" placeholder="Your Name" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl mb-4 text-center text-lg focus:border-indigo-400 outline-none">
-        <button onclick="init()" class="w-full bg-indigo-600 p-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-lg shadow-indigo-600/20">Join Session</button>
+    <div id="setup" class="w-full max-w-md glass epic-terminal p-8 text-center mt-12 relative overflow-hidden">
+        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+        
+        <div class="inline-block bg-indigo-500/10 border border-indigo-500/30 rounded-full px-3 py-1 mb-6">
+            <span class="text-[9px] font-black uppercase tracking-[0.25em] text-indigo-300 animate-pulse">📡 Satellite Link Established</span>
+        </div>
+
+        <h1 class="epic-title text-5xl font-black italic mb-1 uppercase tracking-tighter">Vienna <span class="accent">2026</span></h1>
+        <p class="text-[10px] font-bold opacity-40 mb-8 tracking-[0.5em] text-indigo-200">GRAND FINAL JURY CONSOLE</p>
+        
+        <div class="text-left mb-6">
+            <label class="text-[9px] font-black opacity-30 uppercase tracking-widest ml-1">Jury Member Sign-In</label>
+            <input id="uName" type="text" placeholder="Enter credential name..." class="w-full bg-black/40 border border-white/10 p-4 rounded-xl mt-1.5 text-center text-lg font-bold focus:border-indigo-400 outline-none transition-all placeholder:opacity-20 placeholder:font-normal">
+        </div>
+
+        <button onclick="init()" class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] transition-all p-4 rounded-xl font-black uppercase tracking-widest text-sm shadow-xl shadow-indigo-600/30 border border-indigo-400/20">
+            Initialize Access
+        </button>
+        
+        <div class="mt-8 text-[8px] font-mono opacity-20 tracking-wider uppercase">
+            System Code: ESC-PROD-2026 // Secure Encryption Active
+        </div>
     </div>
 
-    <!-- APP UI -->
     <div id="app" class="hidden w-full max-w-md space-y-4">
         <div class="glass p-5 text-center relative overflow-hidden">
             <div id="avg" class="absolute top-3 right-3 bg-indigo-500/20 text-indigo-200 text-[9px] px-2 py-0.5 rounded-full font-black border border-indigo-500/30">AVG: --</div>
@@ -106,7 +135,6 @@
         </div>
     </div>
 
-    <!-- CHAT MODAL -->
     <div id="chat-ui" class="hidden fixed inset-0 z-[60] modal-bg p-4 flex flex-col">
         <div class="flex justify-between items-center mb-4">
             <h2 class="text-2xl font-black italic uppercase tracking-tighter">Jury <span class="accent">Chat</span></h2>
@@ -119,18 +147,19 @@
         </div>
     </div>
 
-    <!-- RANKINGS MODAL -->
     <div id="rankings" class="hidden fixed inset-0 z-[60] modal-bg p-6 overflow-y-auto">
         <div class="max-w-md mx-auto">
-            <div class="flex justify-between items-center mb-6">
+            <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-black italic uppercase tracking-tighter">Jury <span class="accent">Standings</span></h2>
                 <button onclick="closeCurrentModal()" class="h-10 w-10 flex items-center justify-center rounded-full bg-white/10 text-2xl font-light">×</button>
             </div>
+            
+            <div id="party-awards" class="grid grid-cols-2 gap-2 mb-4"></div>
+            
             <div id="rankings-list" class="space-y-2 pb-20"></div>
         </div>
     </div>
 
-    <!-- DELETE CONFIRMATION -->
     <div id="admin-confirm" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
         <div class="w-full max-w-xs admin-warning p-8 rounded-3xl text-center shadow-2xl">
             <div class="text-4xl mb-4">⚠️</div>
@@ -144,7 +173,6 @@
     </div>
 
 <script>
-// --- OFFICIAL 2026 RUNNING ORDER ---
 const songs = [
     {n:"01", c:"Denmark", code:"dk", a:"Søren Torpegaard Lund - Før Vi Går Hjem"},
     {n:"02", c:"Germany", code:"de", a:"Sarah Engels - Fire"},
@@ -231,6 +259,7 @@ function init() {
         client.subscribe(`esc2026/${ROOM}/sync`);
         send({ type: "SYNC_REQUEST", from: myName });
         document.getElementById('setup').classList.add('hidden');
+        document.getElementById('main-header').classList.remove('hidden');
         document.getElementById('app').classList.remove('hidden');
         render();
     });
@@ -317,14 +346,8 @@ function addChatMessage(user, text) {
     const div = document.createElement('div');
     const isMe = user === myName;
     const userColor = getMemberColor(user);
-    
     div.className = `chat-bubble flex flex-col ${isMe ? 'items-end' : 'items-start'}`;
-    div.innerHTML = `
-        <span style="color: ${userColor}; font-size: 10px; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; padding: 0 4px;">${user}</span>
-        <div class="${isMe ? 'bg-indigo-600' : 'bg-white/10'} p-2.5 rounded-2xl max-w-[90%] shadow-lg">
-            <p style="font-size: 14px; line-height: 1.4; font-weight: 400; color: white;">${text}</p>
-        </div>
-    `;
+    div.innerHTML = `<span style="color: ${userColor}; font-size: 10px; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; padding: 0 4px;">${user}</span><div class="${isMe ? 'bg-indigo-600' : 'bg-white/10'} p-2.5 rounded-2xl max-w-[90%] shadow-lg"><p style="font-size: 14.5px; line-height: 1.4; font-weight: 400; color: white;">${text}</p></div>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
     if(document.getElementById('chat-ui').classList.contains('hidden')) {
@@ -338,6 +361,38 @@ document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e
 function updateRankingsUI() {
     const container = document.getElementById('rankings-list');
     container.innerHTML = '';
+    
+    let userStats = {};
+    Object.keys(roomData).forEach(c => {
+        Object.entries(roomData[c]).forEach(([u, s]) => {
+            if(!userStats[u]) userStats[u] = { total: 0, count: 0 };
+            userStats[u].total += s;
+            userStats[u].count++;
+        });
+    });
+
+    let profiles = Object.entries(userStats).map(([u, d]) => ({ name: u, avg: d.total / d.count })).sort((a,b) => b.avg - a.avg);
+    const awardsDiv = document.getElementById('party-awards');
+    
+    if(profiles.length > 0) {
+        let generous = profiles[0];
+        let critic = profiles[profiles.length - 1];
+        awardsDiv.innerHTML = `
+            <div class="glass p-2.5 text-center border-emerald-500/30 bg-emerald-500/5">
+                <div class="text-xs font-black uppercase tracking-wider text-emerald-400">👑 Generous</div>
+                <div class="text-sm font-bold truncate mt-0.5">${generous.name}</div>
+                <div class="text-[10px] font-mono opacity-50">Avg: ${generous.avg.toFixed(1)}</div>
+            </div>
+            <div class="glass p-2.5 text-center border-rose-500/30 bg-rose-500/5">
+                <div class="text-xs font-black uppercase tracking-wider text-rose-400">👹 Brutal Critic</div>
+                <div class="text-sm font-bold truncate mt-0.5">${critic.name}</div>
+                <div class="text-[10px] font-mono opacity-50">Avg: ${critic.avg.toFixed(1)}</div>
+            </div>
+        `;
+    } else {
+        awardsDiv.innerHTML = '';
+    }
+
     const results = songs.map(s => {
         const votes = roomData[s.c] || {};
         const vals = Object.values(votes);
