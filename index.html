@@ -193,7 +193,7 @@ const songs = [
     {n:"19", c:"Lithuania", code:"lt", a:"Lion Ceccah - Sólo Quiero Más"},
     {n:"20", c:"Sweden", code:"se", a:"FELICIA - My System"},
     {n:"21", c:"Cyprus", code:"cy", a:"Antigoni - JALLA"},
-    {n:"22", c:"Italy", code:"it", a:"Sal Da Vinci - Per Sempre Sì"},
+    {n:"22", c:"Italy", code:"it", a:"Sal Da Vinci - Per Forever Sì"},
     {n:"23", c:"Norway", code:"no", a:"JONAS LOVV - YA YA YA"},
     {n:"24", c:"Romania", code:"ro", a:"Alexandra Căpitănescu - Choke Me"},
     {n:"25", c:"Austria", code:"at", a:"COSMÓ - Tanzschein"}
@@ -235,6 +235,7 @@ function executeDelete() {
     if(!pendingDelete) return;
     const { country, user } = pendingDelete;
     if(roomData[country]) delete roomData[country][user];
+    localStorage.setItem(ROOM + '_roomData_v3', JSON.stringify(roomData));
     send({ type: "ADMIN_DELETE", country: country, user: user });
     if(country === songs[idx].c) refreshUI();
     if(!document.getElementById('rankings').classList.contains('hidden')) updateRankingsUI();
@@ -251,11 +252,17 @@ function init() {
     myName = document.getElementById('uName').value.trim();
     if(!myName) return alert("Enter Name");
     
-    // Recovery Step 1: Pre-populate any archived chat timeline cached locally
+    // Recovery Layer 1: Instantly pop cached chats back onto the terminal
     const savedChats = localStorage.getItem(ROOM + '_chats_v2');
     if(savedChats) {
         chatLog = JSON.parse(savedChats);
         chatLog.forEach(m => addChatMessage(m.user, m.text, false));
+    }
+
+    // Recovery Layer 2: Load historical scorecard from storage so others' scores don't disappear on refresh
+    const savedScores = localStorage.getItem(ROOM + '_roomData_v3');
+    if(savedScores) {
+        roomData = JSON.parse(savedScores);
     }
 
     client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
@@ -264,10 +271,10 @@ function init() {
         document.getElementById('stat').innerText = "LIVE";
         client.subscribe(`esc2026/${ROOM}/sync`);
         
-        // Broadcast standard sync request (now requests room state + missing timelines)
+        // Broadcast sync inquiry over the airwaves to verify network synchronization updates
         send({ type: "SYNC_REQUEST", from: myName });
         
-        // Recovery Step 2: Extract last known viewing coordinate per username
+        // Recovery Layer 3: Position player back onto the song index they left off on
         const savedIdx = localStorage.getItem(ROOM + '_last_idx_' + myName);
         idx = savedIdx !== null ? parseInt(savedIdx) : 0;
 
@@ -282,6 +289,7 @@ function init() {
         else if (d.type === "CHAT") { handleIncomingChat(d.user, d.text); }
         else if (d.type === "ADMIN_DELETE") { 
             if(roomData[d.country]) delete roomData[d.country][d.user];
+            localStorage.setItem(ROOM + '_roomData_v3', JSON.stringify(roomData));
             if(d.country === songs[idx].c) refreshUI();
             if(!document.getElementById('rankings').classList.contains('hidden')) updateRankingsUI();
         }
@@ -289,6 +297,7 @@ function init() {
             send({ type: "SYNC_RESPONSE", data: roomData, chats: chatLog, to: d.from }); 
         }
         else if (d.type === "SYNC_RESPONSE" && d.to === myName) {
+            // Smart Merge: incoming remote scores integrate seamlessly with current storage structures
             Object.keys(d.data).forEach(c => { Object.keys(d.data[c]).forEach(u => updateData(c, u, d.data[c][u])); });
             if (d.chats) {
                 d.chats.forEach(m => {
@@ -306,6 +315,7 @@ function send(obj) { if(client) client.publish(`esc2026/${ROOM}/sync`, JSON.stri
 function updateData(c, u, s) {
     if(!roomData[c]) roomData[c] = {};
     roomData[c][u] = parseInt(s);
+    localStorage.setItem(ROOM + '_roomData_v3', JSON.stringify(roomData));
     if(c === songs[idx].c) refreshUI();
 }
 
@@ -316,16 +326,16 @@ function render() {
     document.getElementById('song-num').innerText = `${s.n}/25`;
     document.getElementById('flag').src = `https://flagcdn.com/w160/${s.code}.png`;
     
-    // Save current viewing layer position dynamically
     localStorage.setItem(ROOM + '_last_idx_' + myName, idx);
 
+    // Pull last input rating or default gracefully to 1
     const currentScore = (roomData[s.c] && roomData[s.c][myName]) ? roomData[s.c][myName] : 1;
     document.getElementById('rng').value = currentScore;
     document.getElementById('cur-val').innerText = currentScore;
 
     if (!roomData[s.c] || !roomData[s.c][myName]) {
-        updateData(s.c, myName, 1);
-        send({ type: "SCORE_UPDATE", user: myName, country: s.c, score: 1 });
+        updateData(s.c, myName, currentScore);
+        send({ type: "SCORE_UPDATE", user: myName, country: s.c, score: currentScore });
     }
     refreshUI();
 }
@@ -372,7 +382,6 @@ function sendChat() {
 }
 
 function handleIncomingChat(user, text) {
-    // Add to engine timeline array if unique to prevent duplications during multi-device synchronization
     if (!chatLog.some(m => m.user === user && m.text === text)) {
         addChatMessage(user, text, true);
     }
@@ -390,7 +399,7 @@ function addChatMessage(user, text, saveToLog = true) {
 
     if (saveToLog) {
         chatLog.push({ user, text });
-        if(chatLog.length > 50) chatLog.shift(); // Keep rolling memory pipeline lean
+        if(chatLog.length > 50) chatLog.shift(); 
         localStorage.setItem(ROOM + '_chats_v2', JSON.stringify(chatLog));
     }
 
